@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neuroreader"
+version = "0.1.0"
+description = "Text-to-speech for neurodivergent readers, powered by ElevenLabs. Read PDFs, paste text, or use a global shortcut to hear any text read aloud."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Alisdair Gurling" },
+]
+keywords = ["tts", "text-to-speech", "elevenlabs", "accessibility", "dyslexia", "neurodivergent", "assistive-technology"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Accessibility",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: MacOS",
+]
+
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "httpx>=0.25.0",
+    "jinja2>=3.1.0",
+    "pymupdf>=1.23.0",
+    "python-multipart>=0.0.6",
+]
+
+[project.optional-dependencies]
+hotkey = [
+    "pynput>=1.7.6",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+neuroreader = "neuroreader.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/alisdairgurling/neuroreader"
+Issues = "https://github.com/alisdairgurling/neuroreader/issues"
+
+[tool.setuptools.packages.find]
+include = ["neuroreader*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

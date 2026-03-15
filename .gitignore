@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Config (contains API key)
+# Users should NOT commit their config
+# But we don't gitignore ~/.neuroreader since it's outside the repo
+
+# Temp files
+*.mp3
+*.wav
+/tmp/
