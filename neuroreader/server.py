@@ -34,11 +34,11 @@ async def index(request: Request):
     """Serve the main NeuroReader interface."""
     config = load_config()
     has_key = bool(get_api_key())
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "has_key": has_key,
-        "config": config,
-    })
+    return templates.TemplateResponse(
+        request,
+        "index.html",
+        {"has_key": has_key, "config": config},
+    )
 
 
 # ---------------------------------------------------------------------------

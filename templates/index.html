@@ -1,17 +1,20 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark light">
   <title>NeuroReader — Read Aloud</title>
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
+  <a class="skip-link" href="#tab-read">Skip to main content</a>
+
   <div id="app">
     <!-- ─── Header ─── -->
     <header>
       <div class="logo">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
           <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
           <line x1="12" y1="19" x2="12" y2="23"/>
@@ -19,57 +22,64 @@
         </svg>
         <h1>NeuroReader</h1>
       </div>
-      <nav>
-        <button class="tab active" data-tab="read">Read</button>
-        <button class="tab" data-tab="pdf">PDF</button>
-        <button class="tab" data-tab="settings">Settings</button>
+      <nav role="tablist" aria-label="Sections">
+        <button class="tab active" role="tab" id="tabbtn-read" data-tab="read" aria-selected="true" aria-controls="tab-read">Read</button>
+        <button class="tab" role="tab" id="tabbtn-pdf" data-tab="pdf" aria-selected="false" aria-controls="tab-pdf" tabindex="-1">PDF</button>
+        <button class="tab" role="tab" id="tabbtn-settings" data-tab="settings" aria-selected="false" aria-controls="tab-settings" tabindex="-1">Settings</button>
       </nav>
     </header>
 
     <!-- ─── API Key Banner ─── -->
-    <div id="api-key-banner" class="banner hidden">
+    <div id="api-key-banner" class="banner hidden" role="status">
       <p>To get started, add your <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener">ElevenLabs API key</a> in Settings.</p>
     </div>
 
+    <!-- ─── Persistent status line (used in Quiet mode) ─── -->
+    <div id="status-line" class="status-line hidden" role="status" aria-live="polite">
+      <span id="status-line-text"></span>
+      <button id="status-line-dismiss" class="btn-ghost" type="button" aria-label="Dismiss status message">×</button>
+    </div>
+
     <!-- ─── Read Tab ─── -->
-    <section id="tab-read" class="tab-content active">
+    <section id="tab-read" class="tab-content active" role="tabpanel" aria-labelledby="tabbtn-read">
       <div class="input-area">
         <textarea
           id="text-input"
           placeholder="Paste or type text here to have it read aloud…"
           spellcheck="false"
           autofocus
+          aria-label="Text to read aloud"
         ></textarea>
         <div class="input-meta">
           <span id="char-count">0 characters</span>
-          <button id="clear-btn" class="btn-ghost" title="Clear text">Clear</button>
+          <span id="read-time" class="read-time"></span>
+          <button id="clear-btn" class="btn-ghost" type="button">Clear</button>
         </div>
       </div>
 
       <div class="controls">
-        <button id="speak-btn" class="btn-primary" disabled>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-          Read Aloud
+        <button id="speak-btn" class="btn-primary" type="button" disabled aria-label="Read text aloud">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          <span>Read Aloud</span>
         </button>
-        <button id="stop-btn" class="btn-secondary hidden">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
-          Stop
-        </button>
+        <button id="cancel-btn" class="btn-ghost hidden" type="button">Cancel</button>
         <div class="speed-control">
           <label for="speed-slider">Speed</label>
           <input type="range" id="speed-slider" min="0.5" max="2.0" step="0.1" value="1.0">
-          <span id="speed-value">1.0×</span>
+          <span id="speed-value" aria-hidden="true">1.0×</span>
         </div>
       </div>
 
-      <!-- Hidden audio element for playback -->
-      <audio id="audio-player"></audio>
+      <!-- Audio player with native controls for pause / seek / time -->
+      <div id="audio-area" class="audio-area hidden">
+        <audio id="audio-player" controls preload="auto" aria-label="Playback"></audio>
+      </div>
     </section>
 
     <!-- ─── PDF Tab ─── -->
-    <section id="tab-pdf" class="tab-content">
-      <div class="pdf-upload-area" id="pdf-drop-zone">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <section id="tab-pdf" class="tab-content" role="tabpanel" aria-labelledby="tabbtn-pdf">
+      <div class="pdf-upload-area" id="pdf-drop-zone" tabindex="0" role="button" aria-label="Drop a PDF here or press Enter to browse for a file">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
           <polyline points="14 2 14 8 20 8"/>
           <line x1="12" y1="18" x2="12" y2="12"/>
@@ -82,25 +92,22 @@
       <div id="pdf-preview" class="hidden">
         <div class="pdf-header">
           <span id="pdf-filename"></span>
-          <button id="pdf-remove" class="btn-ghost">Remove</button>
+          <button id="pdf-remove" class="btn-ghost" type="button">Remove</button>
         </div>
-        <textarea id="pdf-text" readonly placeholder="Extracted text will appear here…"></textarea>
+        <textarea id="pdf-text" readonly placeholder="Extracted text will appear here…" aria-label="Extracted PDF text"></textarea>
         <div class="controls">
-          <button id="pdf-speak-btn" class="btn-primary" disabled>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            Read PDF Aloud
+          <button id="pdf-speak-btn" class="btn-primary" type="button" disabled>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            <span>Read PDF Aloud</span>
           </button>
-          <button id="pdf-stop-btn" class="btn-secondary hidden">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
-            Stop
-          </button>
-          <button id="pdf-copy-btn" class="btn-ghost">Copy text to Read tab</button>
+          <button id="pdf-copy-btn" class="btn-ghost" type="button">Copy to Read tab</button>
         </div>
       </div>
     </section>
 
     <!-- ─── Settings Tab ─── -->
-    <section id="tab-settings" class="tab-content">
+    <section id="tab-settings" class="tab-content" role="tabpanel" aria-labelledby="tabbtn-settings">
+
       <div class="settings-group">
         <h2>API Key</h2>
         <p class="help-text">Your key is stored locally on your Mac and never sent anywhere except the ElevenLabs API.</p>
@@ -110,34 +117,97 @@
             id="api-key-input"
             placeholder="sk_xxxxxxxxxxxxxxxxxxxxxxxx"
             autocomplete="off"
+            aria-label="ElevenLabs API key"
           >
-          <button id="save-key-btn" class="btn-primary">Save</button>
+          <button id="save-key-btn" class="btn-primary" type="button">Save</button>
         </div>
-        <p class="help-text">Get your key at <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener">elevenlabs.io</a></p>
+        <p class="help-text">Get your key at <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener">elevenlabs.io</a>.</p>
       </div>
 
       <div class="settings-group">
         <h2>Voice</h2>
         <div id="voice-selector">
-          <select id="voice-select">
+          <select id="voice-select" aria-label="Voice">
             <option value="">Loading voices…</option>
           </select>
-          <button id="refresh-voices" class="btn-ghost">Refresh</button>
+          <button id="refresh-voices" class="btn-ghost" type="button">Refresh</button>
         </div>
       </div>
 
+      <!-- Reading preferences -->
       <div class="settings-group">
-        <h2>Voice Settings</h2>
+        <h2>Reading preferences</h2>
+        <p class="help-text">Tweak how text looks in the input area. Changes apply live.</p>
         <div class="slider-group">
-          <label for="stability-slider">Stability</label>
+          <label for="pref-font">Font</label>
+          <select id="pref-font">
+            <option value="system">Default (system sans)</option>
+            <option value="atkinson">Atkinson Hyperlegible</option>
+            <option value="opendyslexic">OpenDyslexic</option>
+            <option value="serif">Serif (Georgia)</option>
+            <option value="mono">Monospace</option>
+          </select>
+        </div>
+        <div class="slider-group">
+          <label for="pref-size">Text size</label>
+          <input type="range" id="pref-size" min="14" max="28" step="1" value="17">
+          <span id="pref-size-value">17 px</span>
+        </div>
+        <div class="slider-group">
+          <label for="pref-line">Line spacing</label>
+          <input type="range" id="pref-line" min="1.2" max="2.4" step="0.1" value="1.7">
+          <span id="pref-line-value">1.7</span>
+        </div>
+        <div class="slider-group">
+          <label for="pref-letter">Letter spacing</label>
+          <input type="range" id="pref-letter" min="0" max="0.2" step="0.01" value="0">
+          <span id="pref-letter-value">0</span>
+        </div>
+        <button id="pref-reset" class="btn-ghost" type="button">Reset reading preferences</button>
+      </div>
+
+      <!-- Appearance -->
+      <div class="settings-group">
+        <h2>Appearance</h2>
+        <p class="help-text">Pick the theme that's easiest on your eyes.</p>
+        <div class="theme-row" role="radiogroup" aria-label="Theme">
+          <button class="theme-chip" data-theme="dark"     role="radio" aria-checked="true"  type="button">Dark</button>
+          <button class="theme-chip" data-theme="light"    role="radio" aria-checked="false" type="button">Light</button>
+          <button class="theme-chip" data-theme="sepia"    role="radio" aria-checked="false" type="button">Sepia</button>
+          <button class="theme-chip" data-theme="contrast" role="radio" aria-checked="false" type="button">High contrast</button>
+        </div>
+      </div>
+
+      <!-- Comfort -->
+      <div class="settings-group">
+        <h2>Comfort</h2>
+        <div class="toggle-row">
+          <label for="pref-motion">Reduce motion</label>
+          <input type="checkbox" id="pref-motion">
+        </div>
+        <p class="help-text">Turns off animations, transitions, and subtle hover effects.</p>
+        <div class="toggle-row">
+          <label for="pref-quiet">Quiet mode</label>
+          <input type="checkbox" id="pref-quiet">
+        </div>
+        <p class="help-text">Replaces pop-up notifications with a persistent status line that waits until you dismiss it.</p>
+      </div>
+
+      <!-- Voice tuning -->
+      <div class="settings-group">
+        <h2>Voice tuning</h2>
+        <div class="slider-group">
+          <label for="stability-slider">Steadiness</label>
           <input type="range" id="stability-slider" min="0" max="1" step="0.05" value="0.5">
           <span id="stability-value">0.50</span>
         </div>
+        <p class="help-text">Higher = more consistent; lower = more expressive. (ElevenLabs "stability".)</p>
         <div class="slider-group">
-          <label for="similarity-slider">Clarity + Similarity</label>
+          <label for="similarity-slider">Clarity</label>
           <input type="range" id="similarity-slider" min="0" max="1" step="0.05" value="0.75">
           <span id="similarity-value">0.75</span>
         </div>
+        <p class="help-text">Higher = closer to the source voice. (ElevenLabs "similarity boost".)</p>
       </div>
 
       <div class="settings-group">
@@ -148,7 +218,9 @@
           <strong>System Settings → Keyboard → Keyboard Shortcuts → Services</strong>.
         </p>
         <p class="help-text">
-          Additionally, the global hotkey <kbd id="hotkey-display">⌘⇧R</kbd> will read whatever is on your clipboard.
+          Global hotkey <kbd id="hotkey-display">⌘⇧R</kbd> reads whatever is on your clipboard.
+          Inside the app: <kbd>⌘/Ctrl + Enter</kbd> to read, <kbd>Esc</kbd> to cancel,
+          <kbd>←</kbd>/<kbd>→</kbd> to move between tabs.
         </p>
       </div>
 
@@ -163,7 +235,7 @@
     </section>
 
     <!-- ─── Toast notifications ─── -->
-    <div id="toast-container"></div>
+    <div id="toast-container" aria-live="polite" aria-atomic="false"></div>
   </div>
 
   <script src="/static/js/app.js"></script>
