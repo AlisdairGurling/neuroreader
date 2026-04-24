@@ -6,6 +6,11 @@
   // ─── State ───
   let isPlaying = false;
   let currentBlobUrl = null;
+  let alignmentData = null;     // { tokens, sentences } for the current playback
+  let wordEls = [];             // DOM refs to word <span>s, indexed by token idx
+  let activeTokenIdx = -1;
+  let activeSentenceIdx = -1;
+  let rafId = null;
 
   // ─── DOM refs ───
   const $  = (sel) => document.querySelector(sel);
@@ -24,6 +29,7 @@
   const speedValue     = $("#speed-value");
   const audioArea      = $("#audio-area");
   const audioPlayer    = $("#audio-player");
+  const readingPane    = $("#reading-pane");
   const apiBanner      = $("#api-key-banner");
 
   const statusLine     = $("#status-line");
@@ -61,6 +67,7 @@
   const prefReset      = $("#pref-reset");
   const prefMotion     = $("#pref-motion");
   const prefQuiet      = $("#pref-quiet");
+  const prefHighlight  = $("#pref-highlight");
 
   // ─── Preferences (localStorage) ───
   const PREFS_KEY  = "neuroreader.prefs.v1";
@@ -83,6 +90,7 @@
     letter: 0,
     reduceMotion: false,
     quiet: false,
+    highlight: true,
   };
 
   function loadPrefs() {
@@ -120,6 +128,7 @@
     if (prefLetter) { prefLetter.value = prefs.letter; prefLetterValue.textContent = `${Number(prefs.letter).toFixed(2)}`; }
     if (prefMotion) prefMotion.checked = !!prefs.reduceMotion;
     if (prefQuiet) prefQuiet.checked = !!prefs.quiet;
+    if (prefHighlight) prefHighlight.checked = !!prefs.highlight;
 
     // Theme chips radio state
     $$(".theme-chip").forEach((chip) => {
@@ -240,6 +249,196 @@
     } catch (_) {}
   });
 
+  // ─── Alignment parsing + reading pane ───
+  // Given per-character alignment from ElevenLabs, group characters into
+  // tokens (words vs punctuation/whitespace) and sentences. A sentence closes
+  // at a non-word token containing `.`, `!`, or `?`.
+  function parseAlignment(alignment) {
+    const chars = alignment.characters || [];
+    const starts = alignment.starts || [];
+    const ends = alignment.ends || [];
+    if (!chars.length) return { tokens: [], sentences: [] };
+
+    // 1. Group chars into raw tokens
+    const raw = [];
+    let cur = null;
+    const wordChar = /[\p{L}\p{N}]/u;
+    for (let i = 0; i < chars.length; i++) {
+      const ch = chars[i];
+      const isWord = wordChar.test(ch);
+      if (!cur || cur.isWord !== isWord) {
+        if (cur) raw.push(cur);
+        cur = { isWord, text: "", start: starts[i] ?? 0, end: ends[i] ?? 0 };
+      }
+      cur.text += ch;
+      cur.end = ends[i] ?? cur.end;
+    }
+    if (cur) raw.push(cur);
+
+    // 2. Assign tokens to sentences
+    const tokens = [];
+    const sentences = [];
+    let sentenceIdx = 0;
+    let firstTokenIdx = 0;
+    let sentenceStart = raw[0]?.start ?? 0;
+
+    for (const rt of raw) {
+      tokens.push({
+        type: rt.isWord ? "word" : "punct",
+        text: rt.text,
+        start: rt.start,
+        end: rt.end,
+        sentenceIdx,
+      });
+      if (!rt.isWord && /[.!?]/.test(rt.text)) {
+        sentences.push({
+          idx: sentenceIdx,
+          start: sentenceStart,
+          end: rt.end,
+          firstTokenIdx,
+          lastTokenIdx: tokens.length - 1,
+        });
+        sentenceIdx++;
+        firstTokenIdx = tokens.length;
+        sentenceStart = rt.end;
+      }
+    }
+    if (tokens.length > firstTokenIdx) {
+      sentences.push({
+        idx: sentenceIdx,
+        start: sentenceStart,
+        end: tokens[tokens.length - 1].end,
+        firstTokenIdx,
+        lastTokenIdx: tokens.length - 1,
+      });
+    }
+
+    return { tokens, sentences };
+  }
+
+  function renderReadingPane({ tokens }) {
+    readingPane.innerHTML = "";
+    wordEls = [];
+    const frag = document.createDocumentFragment();
+    tokens.forEach((tok, idx) => {
+      const span = document.createElement("span");
+      span.textContent = tok.text;
+      span.className = tok.type;
+      if (tok.type === "word") {
+        span.dataset.idx = String(idx);
+        span.dataset.start = String(tok.start);
+        span.dataset.end = String(tok.end);
+        span.addEventListener("click", () => {
+          try {
+            audioPlayer.currentTime = tok.start + 0.001;
+            if (audioPlayer.paused) audioPlayer.play();
+          } catch (_) {}
+        });
+      }
+      wordEls[idx] = span;
+      frag.appendChild(span);
+    });
+    readingPane.appendChild(frag);
+    readingPane.classList.remove("hidden");
+  }
+
+  function clearReadingPane() {
+    readingPane.innerHTML = "";
+    readingPane.classList.add("hidden");
+    wordEls = [];
+    alignmentData = null;
+    activeTokenIdx = -1;
+    activeSentenceIdx = -1;
+  }
+
+  function setActiveToken(newIdx) {
+    if (newIdx === activeTokenIdx) return;
+    if (activeTokenIdx >= 0 && wordEls[activeTokenIdx]) {
+      wordEls[activeTokenIdx].classList.remove("reading");
+    }
+    activeTokenIdx = newIdx;
+    if (newIdx < 0) return;
+    const el = wordEls[newIdx];
+    if (!el) return;
+    el.classList.add("reading");
+
+    // Scroll if off-screen within the reading pane
+    const paneRect = readingPane.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    if (elRect.top < paneRect.top + 16 || elRect.bottom > paneRect.bottom - 16) {
+      el.scrollIntoView({ block: "center", inline: "nearest" });
+    }
+  }
+
+  function setActiveSentence(newIdx) {
+    if (newIdx === activeSentenceIdx || !alignmentData) return;
+    if (activeSentenceIdx >= 0) {
+      const prev = alignmentData.sentences[activeSentenceIdx];
+      if (prev) {
+        for (let i = prev.firstTokenIdx; i <= prev.lastTokenIdx; i++) {
+          wordEls[i]?.classList.remove("sentence");
+        }
+      }
+    }
+    activeSentenceIdx = newIdx;
+    if (newIdx < 0) return;
+    const s = alignmentData.sentences[newIdx];
+    if (!s) return;
+    for (let i = s.firstTokenIdx; i <= s.lastTokenIdx; i++) {
+      wordEls[i]?.classList.add("sentence");
+    }
+  }
+
+  function findTokenAt(t, startFrom = 0) {
+    if (!alignmentData) return -1;
+    const toks = alignmentData.tokens;
+    // Linear forward scan from last known position; rewinds when user seeks back
+    let i = startFrom;
+    if (i < 0 || i >= toks.length || t < toks[i].start) i = 0;
+    while (i < toks.length && toks[i].end <= t) i++;
+    if (i >= toks.length) return -1;
+    // We want word tokens specifically; skip punct
+    if (toks[i].type !== "word") {
+      // Find nearest following word still within this sentence
+      const sIdx = toks[i].sentenceIdx;
+      for (let j = i; j < toks.length && toks[j].sentenceIdx === sIdx; j++) {
+        if (toks[j].type === "word" && toks[j].start <= t && toks[j].end > t) return j;
+      }
+      // No word currently active — return -1 so highlight clears briefly
+      return -1;
+    }
+    return i;
+  }
+
+  function tick() {
+    if (!alignmentData || audioPlayer.paused || audioPlayer.ended) {
+      rafId = null;
+      return;
+    }
+    const t = audioPlayer.currentTime;
+    const tokIdx = findTokenAt(t, activeTokenIdx >= 0 ? activeTokenIdx : 0);
+    if (tokIdx >= 0) {
+      setActiveToken(tokIdx);
+      setActiveSentence(alignmentData.tokens[tokIdx].sentenceIdx);
+    }
+    rafId = requestAnimationFrame(tick);
+  }
+
+  audioPlayer.addEventListener("play", () => {
+    if (alignmentData && rafId === null) rafId = requestAnimationFrame(tick);
+  });
+  audioPlayer.addEventListener("pause", () => {
+    if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+  });
+  audioPlayer.addEventListener("seeked", () => {
+    // User scrubbed — reset scan position to find the new active token
+    if (alignmentData) {
+      const tokIdx = findTokenAt(audioPlayer.currentTime, 0);
+      setActiveToken(tokIdx);
+      if (tokIdx >= 0) setActiveSentence(alignmentData.tokens[tokIdx].sentenceIdx);
+    }
+  });
+
   // ─── Speak (text) ───
   speakBtn.addEventListener("click", () => speakText(textInput.value));
 
@@ -249,41 +448,80 @@
 
     const originalLabel = speakBtn.querySelector("span").textContent;
     speakBtn.disabled = true;
-    speakBtn.querySelector("span").textContent = "Loading…";
+    speakBtn.querySelector("span").textContent = prefs.highlight ? "Preparing…" : "Loading…";
     cancelBtn.classList.remove("hidden");
 
     try {
-      const resp = await fetch("/api/speak", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text.trim() }),
-      });
-
-      if (!resp.ok) {
-        let detail = "Speech request failed.";
-        try { detail = (await resp.json()).detail || detail; } catch (_) {}
-        throw new Error(detail);
+      if (prefs.highlight) {
+        await speakWithHighlight(text.trim());
+      } else {
+        await speakPlain(text.trim());
       }
-
-      const blob = await resp.blob();
-      if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
-      currentBlobUrl = URL.createObjectURL(blob);
-      audioPlayer.src = currentBlobUrl;
-      audioPlayer.playbackRate = parseFloat(speedSlider.value);
-
-      audioArea.classList.remove("hidden");
       isPlaying = true;
       speakBtn.querySelector("span").textContent = originalLabel;
       speakBtn.disabled = false;
-
-      audioPlayer.onended = () => { isPlaying = false; };
-      await audioPlayer.play();
     } catch (e) {
       notify(e.message, "error");
       speakBtn.querySelector("span").textContent = originalLabel;
       speakBtn.disabled = textInput.value.length === 0;
       cancelBtn.classList.add("hidden");
     }
+  }
+
+  async function speakPlain(text) {
+    const resp = await fetch("/api/speak", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (!resp.ok) {
+      let detail = "Speech request failed.";
+      try { detail = (await resp.json()).detail || detail; } catch (_) {}
+      throw new Error(detail);
+    }
+    const blob = await resp.blob();
+    if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+    currentBlobUrl = URL.createObjectURL(blob);
+    audioPlayer.src = currentBlobUrl;
+    audioPlayer.playbackRate = parseFloat(speedSlider.value);
+    audioArea.classList.remove("hidden");
+    audioPlayer.onended = () => { isPlaying = false; };
+    await audioPlayer.play();
+  }
+
+  async function speakWithHighlight(text) {
+    const resp = await fetch("/api/speak-with-timestamps", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (!resp.ok) {
+      let detail = "Speech request failed.";
+      try { detail = (await resp.json()).detail || detail; } catch (_) {}
+      throw new Error(detail);
+    }
+    const data = await resp.json();
+    if (!data.audio_base64) throw new Error("No audio returned.");
+
+    // Decode base64 -> Blob
+    const binary = atob(data.audio_base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: "audio/mpeg" });
+
+    if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+    currentBlobUrl = URL.createObjectURL(blob);
+    audioPlayer.src = currentBlobUrl;
+    audioPlayer.playbackRate = parseFloat(speedSlider.value);
+    audioArea.classList.remove("hidden");
+
+    alignmentData = parseAlignment(data.alignment || {});
+    if (alignmentData.tokens.length) {
+      renderReadingPane(alignmentData);
+    }
+
+    audioPlayer.onended = () => { isPlaying = false; };
+    await audioPlayer.play();
   }
 
   cancelBtn.addEventListener("click", stopPlayback);
@@ -295,12 +533,25 @@
     if (currentBlobUrl) { URL.revokeObjectURL(currentBlobUrl); currentBlobUrl = null; }
     audioArea.classList.add("hidden");
     cancelBtn.classList.add("hidden");
+    clearReadingPane();
+    if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
     isPlaying = false;
     speakBtn.disabled = textInput.value.length === 0;
     const spkSpan = speakBtn.querySelector("span");
     if (spkSpan) spkSpan.textContent = "Read Aloud";
     const pdfSpkSpan = pdfSpeakBtn.querySelector("span");
     if (pdfSpkSpan) pdfSpkSpan.textContent = "Read PDF Aloud";
+  }
+
+  function rereadCurrentSentence() {
+    if (!alignmentData) return;
+    const idx = activeSentenceIdx >= 0 ? activeSentenceIdx : 0;
+    const s = alignmentData.sentences[idx];
+    if (!s) return;
+    try {
+      audioPlayer.currentTime = s.start + 0.001;
+      if (audioPlayer.paused) audioPlayer.play();
+    } catch (_) {}
   }
 
   // ─── PDF Upload ───
@@ -499,6 +750,11 @@
     if (!prefs.quiet) statusLine.classList.add("hidden");
   });
 
+  prefHighlight.addEventListener("change", () => {
+    prefs.highlight = prefHighlight.checked;
+    savePrefs();
+  });
+
   // ─── Global keyboard shortcuts ───
   document.addEventListener("keydown", (e) => {
     // Cmd/Ctrl + Enter: read the text in focus context
@@ -514,6 +770,15 @@
     // Esc: cancel current playback
     if (e.key === "Escape" && (isPlaying || !audioArea.classList.contains("hidden"))) {
       stopPlayback();
+    }
+    // R: re-read current sentence (only when audio is active and focus isn't in an input)
+    if ((e.key === "r" || e.key === "R") && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      const t = e.target;
+      const inField = t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT" || t.isContentEditable);
+      if (!inField && alignmentData && !audioArea.classList.contains("hidden")) {
+        e.preventDefault();
+        rereadCurrentSentence();
+      }
     }
   });
 

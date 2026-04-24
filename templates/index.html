@@ -74,6 +74,9 @@
       <div id="audio-area" class="audio-area hidden">
         <audio id="audio-player" controls preload="auto" aria-label="Playback"></audio>
       </div>
+
+      <!-- Reading pane: word-level highlight synced to audio -->
+      <div id="reading-pane" class="reading-pane hidden" aria-live="off" aria-label="Text being read, highlighted in sync with audio"></div>
     </section>
 
     <!-- ─── PDF Tab ─── -->
@@ -191,6 +194,11 @@
           <input type="checkbox" id="pref-quiet">
         </div>
         <p class="help-text">Replaces pop-up notifications with a persistent status line that waits until you dismiss it.</p>
+        <div class="toggle-row">
+          <label for="pref-highlight">Highlight while reading</label>
+          <input type="checkbox" id="pref-highlight" checked>
+        </div>
+        <p class="help-text">Shows the text with each word highlighted as it's spoken. Click a word to jump to it. Press <kbd>R</kbd> to re-read the current sentence. Requires one extra round-trip before playback, and may use more credits for long texts.</p>
       </div>
 
       <!-- Voice tuning -->
@@ -220,7 +228,7 @@
         <p class="help-text">
           Global hotkey <kbd id="hotkey-display">⌘⇧R</kbd> reads whatever is on your clipboard.
           Inside the app: <kbd>⌘/Ctrl + Enter</kbd> to read, <kbd>Esc</kbd> to cancel,
-          <kbd>←</kbd>/<kbd>→</kbd> to move between tabs.
+          <kbd>R</kbd> to re-read the current sentence, <kbd>←</kbd>/<kbd>→</kbd> to move between tabs.
         </p>
       </div>
 

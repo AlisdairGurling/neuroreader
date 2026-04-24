@@ -418,6 +418,60 @@ input[type="range"]::-moz-range-thumb {
   filter: none;
 }
 
+/* ─── Reading pane (word-level highlight synced to audio) ─── */
+.reading-pane {
+  margin-top: 16px;
+  padding: 18px 20px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--reading-font);
+  font-size: var(--reading-size);
+  line-height: calc(var(--reading-line) * 1.15);
+  letter-spacing: var(--reading-letter);
+  max-height: 360px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* All tokens in the currently-spoken sentence get a soft tint.
+   The active word additionally gets the stronger accent background. */
+.reading-pane .sentence {
+  background: var(--accent-glow);
+  border-radius: 3px;
+  transition: background-color var(--transition);
+}
+
+.reading-pane .word {
+  cursor: pointer;
+  padding: 0 1px;
+  margin: 0 -1px;
+  border-radius: 3px;
+  transition: background-color var(--transition), color var(--transition);
+}
+
+.reading-pane .word:hover {
+  background: var(--accent-glow);
+}
+
+.reading-pane .word.reading {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.reading-pane .punct {
+  white-space: pre-wrap;
+}
+
+body.reduce-motion .reading-pane,
+body.reduce-motion .reading-pane .sentence,
+body.reduce-motion .reading-pane .word {
+  scroll-behavior: auto !important;
+  transition: none !important;
+}
+
 /* ─── PDF upload ─── */
 .pdf-upload-area {
   display: flex;

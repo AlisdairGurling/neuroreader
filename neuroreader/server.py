@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .config import load_config, save_config, get_api_key
-from .tts import stream_speech, list_voices, TTSError
+from .tts import stream_speech, list_voices, generate_speech_with_timestamps, TTSError
 from .pdf_reader import extract_text_from_pdf, PDFError
 
 # ---------------------------------------------------------------------------
@@ -74,6 +74,35 @@ async def speak(request: Request):
             media_type="audio/mpeg",
             headers={"Content-Disposition": "inline; filename=neuroreader.mp3"},
         )
+    except TTSError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.post("/api/speak-with-timestamps")
+async def speak_with_timestamps(request: Request):
+    """Like /api/speak, but returns JSON with base64 audio + per-character alignment.
+
+    Used by the UI to highlight words in sync with playback.
+    """
+    body = await request.json()
+    text = body.get("text", "").strip()
+    voice_id = body.get("voice_id")
+
+    if not text:
+        raise HTTPException(status_code=400, detail="No text provided.")
+    if len(text) > 50_000:
+        raise HTTPException(
+            status_code=400,
+            detail="Text exceeds 50,000 characters. Please use a shorter selection.",
+        )
+    if not get_api_key():
+        raise HTTPException(
+            status_code=502,
+            detail="No ElevenLabs API key found. Set ELEVENLABS_API_KEY or configure it in Settings.",
+        )
+
+    try:
+        return await generate_speech_with_timestamps(text, voice_id)
     except TTSError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
