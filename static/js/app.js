@@ -4,80 +4,240 @@
   "use strict";
 
   // ─── State ───
-  let currentAudio = null;
   let isPlaying = false;
+  let currentBlobUrl = null;
 
   // ─── DOM refs ───
-  const $ = (sel) => document.querySelector(sel);
+  const $  = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
 
-  const textInput    = $("#text-input");
-  const charCount    = $("#char-count");
-  const clearBtn     = $("#clear-btn");
-  const speakBtn     = $("#speak-btn");
-  const stopBtn      = $("#stop-btn");
-  const speedSlider  = $("#speed-slider");
-  const speedValue   = $("#speed-value");
-  const audioPlayer  = $("#audio-player");
-  const apiBanner    = $("#api-key-banner");
+  const root           = document.documentElement;
+  const body           = document.body;
+
+  const textInput      = $("#text-input");
+  const charCount      = $("#char-count");
+  const readTime       = $("#read-time");
+  const clearBtn       = $("#clear-btn");
+  const speakBtn       = $("#speak-btn");
+  const cancelBtn      = $("#cancel-btn");
+  const speedSlider    = $("#speed-slider");
+  const speedValue     = $("#speed-value");
+  const audioArea      = $("#audio-area");
+  const audioPlayer    = $("#audio-player");
+  const apiBanner      = $("#api-key-banner");
+
+  const statusLine     = $("#status-line");
+  const statusLineText = $("#status-line-text");
+  const statusDismiss  = $("#status-line-dismiss");
 
   // PDF
-  const pdfDropZone  = $("#pdf-drop-zone");
-  const pdfFileInput = $("#pdf-file-input");
-  const pdfPreview   = $("#pdf-preview");
-  const pdfFilename  = $("#pdf-filename");
-  const pdfText      = $("#pdf-text");
-  const pdfRemove    = $("#pdf-remove");
-  const pdfSpeakBtn  = $("#pdf-speak-btn");
-  const pdfStopBtn   = $("#pdf-stop-btn");
-  const pdfCopyBtn   = $("#pdf-copy-btn");
+  const pdfDropZone    = $("#pdf-drop-zone");
+  const pdfFileInput   = $("#pdf-file-input");
+  const pdfPreview     = $("#pdf-preview");
+  const pdfFilename    = $("#pdf-filename");
+  const pdfText        = $("#pdf-text");
+  const pdfRemove      = $("#pdf-remove");
+  const pdfSpeakBtn    = $("#pdf-speak-btn");
+  const pdfCopyBtn     = $("#pdf-copy-btn");
 
-  // Settings
-  const apiKeyInput     = $("#api-key-input");
-  const saveKeyBtn      = $("#save-key-btn");
-  const voiceSelect     = $("#voice-select");
-  const refreshVoices   = $("#refresh-voices");
-  const stabilitySlider = $("#stability-slider");
-  const stabilityValue  = $("#stability-value");
+  // Settings — API / voices / tuning
+  const apiKeyInput      = $("#api-key-input");
+  const saveKeyBtn       = $("#save-key-btn");
+  const voiceSelect      = $("#voice-select");
+  const refreshVoices    = $("#refresh-voices");
+  const stabilitySlider  = $("#stability-slider");
+  const stabilityValue   = $("#stability-value");
   const similaritySlider = $("#similarity-slider");
   const similarityValue  = $("#similarity-value");
 
-  // ─── Tabs ───
-  $$(".tab").forEach((tab) => {
-    tab.addEventListener("click", () => {
-      $$(".tab").forEach((t) => t.classList.remove("active"));
-      $$(".tab-content").forEach((c) => c.classList.remove("active"));
-      tab.classList.add("active");
-      $(`#tab-${tab.dataset.tab}`).classList.add("active");
-    });
-  });
+  // Settings — reading preferences
+  const prefFont       = $("#pref-font");
+  const prefSize       = $("#pref-size");
+  const prefSizeValue  = $("#pref-size-value");
+  const prefLine       = $("#pref-line");
+  const prefLineValue  = $("#pref-line-value");
+  const prefLetter     = $("#pref-letter");
+  const prefLetterValue= $("#pref-letter-value");
+  const prefReset      = $("#pref-reset");
+  const prefMotion     = $("#pref-motion");
+  const prefQuiet      = $("#pref-quiet");
 
-  // ─── Toast system ───
-  function toast(message, type = "info") {
-    const container = $("#toast-container");
-    const el = document.createElement("div");
-    el.className = `toast ${type}`;
-    el.textContent = message;
-    container.appendChild(el);
-    setTimeout(() => el.remove(), 4000);
+  // ─── Preferences (localStorage) ───
+  const PREFS_KEY  = "neuroreader.prefs.v1";
+  const DRAFT_KEY  = "neuroreader.draft.v1";
+  const TAB_KEY    = "neuroreader.tab.v1";
+
+  const FONT_STACKS = {
+    system:       'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+    atkinson:     '"Atkinson Hyperlegible", "Atkinson-Hyperlegible", Inter, system-ui, sans-serif',
+    opendyslexic: '"OpenDyslexic", "Open-Dyslexic", "Comic Sans MS", sans-serif',
+    serif:        'Georgia, "Times New Roman", serif',
+    mono:         '"SF Mono", "Fira Code", "Cascadia Code", ui-monospace, monospace',
+  };
+
+  const DEFAULT_PREFS = {
+    theme: "dark",
+    font: "system",
+    size: 17,
+    line: 1.7,
+    letter: 0,
+    reduceMotion: false,
+    quiet: false,
+  };
+
+  function loadPrefs() {
+    try {
+      const raw = localStorage.getItem(PREFS_KEY);
+      return raw ? { ...DEFAULT_PREFS, ...JSON.parse(raw) } : { ...DEFAULT_PREFS };
+    } catch (_) {
+      return { ...DEFAULT_PREFS };
+    }
   }
 
-  // ─── Text input ───
-  textInput.addEventListener("input", () => {
+  function savePrefs() {
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (_) {}
+  }
+
+  let prefs = loadPrefs();
+
+  function applyPrefs() {
+    // Theme
+    root.setAttribute("data-theme", prefs.theme);
+
+    // Reading prefs via CSS custom properties
+    root.style.setProperty("--reading-font", FONT_STACKS[prefs.font] || FONT_STACKS.system);
+    root.style.setProperty("--reading-size", `${prefs.size}px`);
+    root.style.setProperty("--reading-line", `${prefs.line}`);
+    root.style.setProperty("--reading-letter", `${prefs.letter}em`);
+
+    // Motion
+    body.classList.toggle("reduce-motion", !!prefs.reduceMotion);
+
+    // Reflect in settings controls (so toggles stay in sync)
+    if (prefFont) prefFont.value = prefs.font;
+    if (prefSize) { prefSize.value = prefs.size; prefSizeValue.textContent = `${prefs.size} px`; }
+    if (prefLine) { prefLine.value = prefs.line; prefLineValue.textContent = `${Number(prefs.line).toFixed(1)}`; }
+    if (prefLetter) { prefLetter.value = prefs.letter; prefLetterValue.textContent = `${Number(prefs.letter).toFixed(2)}`; }
+    if (prefMotion) prefMotion.checked = !!prefs.reduceMotion;
+    if (prefQuiet) prefQuiet.checked = !!prefs.quiet;
+
+    // Theme chips radio state
+    $$(".theme-chip").forEach((chip) => {
+      chip.setAttribute("aria-checked", chip.dataset.theme === prefs.theme ? "true" : "false");
+    });
+  }
+
+  // ─── Tabs (ARIA + persisted) ───
+  function selectTab(name) {
+    $$(".tab").forEach((t) => {
+      const selected = t.dataset.tab === name;
+      t.classList.toggle("active", selected);
+      t.setAttribute("aria-selected", selected ? "true" : "false");
+      t.setAttribute("tabindex", selected ? "0" : "-1");
+    });
+    $$(".tab-content").forEach((c) => c.classList.remove("active"));
+    const panel = $(`#tab-${name}`);
+    if (panel) panel.classList.add("active");
+    try { localStorage.setItem(TAB_KEY, name); } catch (_) {}
+  }
+
+  $$(".tab").forEach((tab) => {
+    tab.addEventListener("click", () => selectTab(tab.dataset.tab));
+  });
+
+  // Arrow-key navigation in tablist
+  const tablist = document.querySelector('nav[role="tablist"]');
+  if (tablist) {
+    tablist.addEventListener("keydown", (e) => {
+      const tabs = Array.from(tablist.querySelectorAll(".tab"));
+      const idx = tabs.findIndex((t) => t.getAttribute("aria-selected") === "true");
+      if (idx < 0) return;
+      let next = idx;
+      if (e.key === "ArrowRight") next = (idx + 1) % tabs.length;
+      else if (e.key === "ArrowLeft") next = (idx - 1 + tabs.length) % tabs.length;
+      else if (e.key === "Home") next = 0;
+      else if (e.key === "End") next = tabs.length - 1;
+      else return;
+      e.preventDefault();
+      selectTab(tabs[next].dataset.tab);
+      tabs[next].focus();
+    });
+  }
+
+  // ─── Notification system (toast OR persistent status line, per Quiet mode) ───
+  function notify(message, type = "info") {
+    if (prefs.quiet) {
+      statusLineText.textContent = message;
+      statusLine.classList.remove("hidden", "status-success", "status-error", "status-info");
+      statusLine.classList.add(`status-${type}`);
+    } else {
+      const container = $("#toast-container");
+      const el = document.createElement("div");
+      el.className = `toast ${type}`;
+      el.textContent = message;
+      container.appendChild(el);
+      setTimeout(() => el.remove(), 4000);
+    }
+  }
+
+  statusDismiss.addEventListener("click", () => {
+    statusLine.classList.add("hidden");
+    statusLineText.textContent = "";
+  });
+
+  // ─── Reading-time estimate ───
+  // TTS narration averages ~150 wpm at 1× speed.
+  function estimateListenTime(text, speed) {
+    const words = text.trim().split(/\s+/).filter(Boolean).length;
+    if (!words) return "";
+    const seconds = (words / 150) * 60 / (speed || 1);
+    if (seconds < 60) return `~${Math.max(1, Math.round(seconds))}s listen`;
+    const m = Math.floor(seconds / 60);
+    const s = Math.round(seconds % 60);
+    return `~${m}m ${String(s).padStart(2, "0")}s listen`;
+  }
+
+  function updateInputMeta() {
     const len = textInput.value.length;
     charCount.textContent = `${len.toLocaleString()} character${len !== 1 ? "s" : ""}`;
+    readTime.textContent = estimateListenTime(textInput.value, parseFloat(speedSlider.value));
     speakBtn.disabled = len === 0;
+  }
+
+  // ─── Text input + draft persistence ───
+  let draftSaveTimer = null;
+  textInput.addEventListener("input", () => {
+    updateInputMeta();
+    clearTimeout(draftSaveTimer);
+    draftSaveTimer = setTimeout(() => {
+      try { localStorage.setItem(DRAFT_KEY, textInput.value); } catch (_) {}
+    }, 400);
   });
 
   clearBtn.addEventListener("click", () => {
     textInput.value = "";
-    textInput.dispatchEvent(new Event("input"));
+    try { localStorage.removeItem(DRAFT_KEY); } catch (_) {}
+    updateInputMeta();
     textInput.focus();
   });
 
   // ─── Speed ───
   speedSlider.addEventListener("input", () => {
-    speedValue.textContent = `${parseFloat(speedSlider.value).toFixed(1)}×`;
+    const v = parseFloat(speedSlider.value);
+    speedValue.textContent = `${v.toFixed(1)}×`;
+    if (audioPlayer.src) audioPlayer.playbackRate = v;
+    updateInputMeta();
+  });
+
+  speedSlider.addEventListener("change", async () => {
+    const speed = parseFloat(speedSlider.value);
+    try {
+      await fetch("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ speed }),
+      });
+    } catch (_) {}
   });
 
   // ─── Speak (text) ───
@@ -87,9 +247,10 @@
     if (!text.trim()) return;
     stopPlayback();
 
-    speakBtn.classList.add("hidden");
-    stopBtn.classList.remove("hidden");
-    isPlaying = true;
+    const originalLabel = speakBtn.querySelector("span").textContent;
+    speakBtn.disabled = true;
+    speakBtn.querySelector("span").textContent = "Loading…";
+    cancelBtn.classList.remove("hidden");
 
     try {
       const resp = await fetch("/api/speak", {
@@ -99,40 +260,57 @@
       });
 
       if (!resp.ok) {
-        const err = await resp.json();
-        throw new Error(err.detail || "Speech request failed.");
+        let detail = "Speech request failed.";
+        try { detail = (await resp.json()).detail || detail; } catch (_) {}
+        throw new Error(detail);
       }
 
       const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      audioPlayer.src = url;
+      if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+      currentBlobUrl = URL.createObjectURL(blob);
+      audioPlayer.src = currentBlobUrl;
       audioPlayer.playbackRate = parseFloat(speedSlider.value);
-      audioPlayer.play();
 
-      audioPlayer.onended = () => {
-        stopPlayback();
-        URL.revokeObjectURL(url);
-      };
+      audioArea.classList.remove("hidden");
+      isPlaying = true;
+      speakBtn.querySelector("span").textContent = originalLabel;
+      speakBtn.disabled = false;
+
+      audioPlayer.onended = () => { isPlaying = false; };
+      await audioPlayer.play();
     } catch (e) {
-      toast(e.message, "error");
-      stopPlayback();
+      notify(e.message, "error");
+      speakBtn.querySelector("span").textContent = originalLabel;
+      speakBtn.disabled = textInput.value.length === 0;
+      cancelBtn.classList.add("hidden");
     }
   }
 
-  stopBtn.addEventListener("click", stopPlayback);
+  cancelBtn.addEventListener("click", stopPlayback);
 
   function stopPlayback() {
-    audioPlayer.pause();
-    audioPlayer.currentTime = 0;
+    try { audioPlayer.pause(); } catch (_) {}
+    audioPlayer.removeAttribute("src");
+    audioPlayer.load();
+    if (currentBlobUrl) { URL.revokeObjectURL(currentBlobUrl); currentBlobUrl = null; }
+    audioArea.classList.add("hidden");
+    cancelBtn.classList.add("hidden");
     isPlaying = false;
-    speakBtn.classList.remove("hidden");
-    stopBtn.classList.add("hidden");
-    pdfSpeakBtn.classList.remove("hidden");
-    pdfStopBtn.classList.add("hidden");
+    speakBtn.disabled = textInput.value.length === 0;
+    const spkSpan = speakBtn.querySelector("span");
+    if (spkSpan) spkSpan.textContent = "Read Aloud";
+    const pdfSpkSpan = pdfSpeakBtn.querySelector("span");
+    if (pdfSpkSpan) pdfSpkSpan.textContent = "Read PDF Aloud";
   }
 
   // ─── PDF Upload ───
   pdfDropZone.addEventListener("click", () => pdfFileInput.click());
+  pdfDropZone.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      pdfFileInput.click();
+    }
+  });
   pdfFileInput.addEventListener("change", (e) => {
     if (e.target.files.length) handlePDF(e.target.files[0]);
   });
@@ -151,7 +329,7 @@
     if (file && file.name.toLowerCase().endsWith(".pdf")) {
       handlePDF(file);
     } else {
-      toast("Please drop a PDF file.", "error");
+      notify("Please drop a PDF file.", "error");
     }
   });
 
@@ -168,16 +346,17 @@
     try {
       const resp = await fetch("/api/extract-pdf", { method: "POST", body: formData });
       if (!resp.ok) {
-        const err = await resp.json();
-        throw new Error(err.detail || "PDF extraction failed.");
+        let detail = "PDF extraction failed.";
+        try { detail = (await resp.json()).detail || detail; } catch (_) {}
+        throw new Error(detail);
       }
       const data = await resp.json();
       pdfText.value = data.text;
       pdfSpeakBtn.disabled = false;
-      toast(`Extracted ${data.char_count.toLocaleString()} characters.`, "success");
+      notify(`Extracted ${data.char_count.toLocaleString()} characters.`, "success");
     } catch (e) {
       pdfText.value = "";
-      toast(e.message, "error");
+      notify(e.message, "error");
     }
   }
 
@@ -190,29 +369,24 @@
   });
 
   pdfSpeakBtn.addEventListener("click", () => {
-    pdfSpeakBtn.classList.add("hidden");
-    pdfStopBtn.classList.remove("hidden");
     speakText(pdfText.value);
   });
 
-  pdfStopBtn.addEventListener("click", stopPlayback);
-
   pdfCopyBtn.addEventListener("click", () => {
     textInput.value = pdfText.value;
-    textInput.dispatchEvent(new Event("input"));
-    // Switch to Read tab
-    $$(".tab")[0].click();
-    toast("Text copied to Read tab.", "success");
+    try { localStorage.setItem(DRAFT_KEY, textInput.value); } catch (_) {}
+    updateInputMeta();
+    selectTab("read");
+    notify("Text copied to Read tab.", "success");
   });
 
   // ─── Settings: API Key ───
   saveKeyBtn.addEventListener("click", async () => {
     const key = apiKeyInput.value.trim();
     if (!key) {
-      toast("Please enter an API key.", "error");
+      notify("Please enter an API key.", "error");
       return;
     }
-
     try {
       const resp = await fetch("/api/config", {
         method: "POST",
@@ -220,13 +394,13 @@
         body: JSON.stringify({ elevenlabs_api_key: key }),
       });
       if (resp.ok) {
-        toast("API key saved.", "success");
+        notify("API key saved.", "success");
         apiKeyInput.value = "";
         apiBanner.classList.add("hidden");
         loadVoices();
       }
     } catch (e) {
-      toast("Failed to save API key.", "error");
+      notify("Failed to save API key.", "error");
     }
   });
 
@@ -258,15 +432,15 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ voice_id: voiceSelect.value }),
     });
-    toast("Voice updated.", "success");
+    notify("Voice updated.", "success");
   });
 
   refreshVoices.addEventListener("click", () => {
-    toast("Refreshing voices…", "info");
+    notify("Refreshing voices…", "info");
     loadVoices();
   });
 
-  // ─── Settings: Sliders ───
+  // ─── Settings: Tuning sliders ───
   stabilitySlider.addEventListener("input", () => {
     stabilityValue.textContent = parseFloat(stabilitySlider.value).toFixed(2);
   });
@@ -289,30 +463,77 @@
     });
   });
 
-  // ─── Speed slider syncs to playback ───
-  speedSlider.addEventListener("change", async () => {
-    const speed = parseFloat(speedSlider.value);
-    audioPlayer.playbackRate = speed;
-    await fetch("/api/config", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ speed }),
+  // ─── Settings: Reading preferences ───
+  prefFont.addEventListener("change", () => { prefs.font = prefFont.value; savePrefs(); applyPrefs(); });
+  prefSize.addEventListener("input", () => { prefs.size = parseInt(prefSize.value, 10); savePrefs(); applyPrefs(); });
+  prefLine.addEventListener("input", () => { prefs.line = parseFloat(prefLine.value); savePrefs(); applyPrefs(); });
+  prefLetter.addEventListener("input", () => { prefs.letter = parseFloat(prefLetter.value); savePrefs(); applyPrefs(); });
+
+  prefReset.addEventListener("click", () => {
+    prefs = { ...prefs, font: DEFAULT_PREFS.font, size: DEFAULT_PREFS.size, line: DEFAULT_PREFS.line, letter: DEFAULT_PREFS.letter };
+    savePrefs();
+    applyPrefs();
+    notify("Reading preferences reset.", "info");
+  });
+
+  // ─── Settings: Appearance (theme chips) ───
+  $$(".theme-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      prefs.theme = chip.dataset.theme;
+      savePrefs();
+      applyPrefs();
     });
   });
 
-  // ─── Keyboard shortcut: Cmd+Enter to speak ───
+  // ─── Settings: Comfort ───
+  prefMotion.addEventListener("change", () => {
+    prefs.reduceMotion = prefMotion.checked;
+    savePrefs();
+    applyPrefs();
+  });
+
+  prefQuiet.addEventListener("change", () => {
+    prefs.quiet = prefQuiet.checked;
+    savePrefs();
+    // If switching to loud while a status line is shown, leave it dismissable
+    if (!prefs.quiet) statusLine.classList.add("hidden");
+  });
+
+  // ─── Global keyboard shortcuts ───
   document.addEventListener("keydown", (e) => {
+    // Cmd/Ctrl + Enter: read the text in focus context
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
-      if (textInput.value.trim()) speakText(textInput.value);
+      const activeTab = document.querySelector(".tab[aria-selected='true']")?.dataset.tab;
+      if (activeTab === "pdf" && pdfText.value.trim()) {
+        speakText(pdfText.value);
+      } else if (textInput.value.trim()) {
+        speakText(textInput.value);
+      }
     }
-    if (e.key === "Escape" && isPlaying) {
+    // Esc: cancel current playback
+    if (e.key === "Escape" && (isPlaying || !audioArea.classList.contains("hidden"))) {
       stopPlayback();
     }
   });
 
   // ─── Init ───
   async function init() {
+    applyPrefs();
+
+    // Restore draft
+    try {
+      const draft = localStorage.getItem(DRAFT_KEY);
+      if (draft) textInput.value = draft;
+    } catch (_) {}
+    updateInputMeta();
+
+    // Restore last tab
+    try {
+      const lastTab = localStorage.getItem(TAB_KEY);
+      if (lastTab && $(`#tab-${lastTab}`)) selectTab(lastTab);
+    } catch (_) {}
+
     try {
       const resp = await fetch("/api/config");
       const config = await resp.json();
@@ -325,12 +546,13 @@
 
       speedSlider.value = config.speed || 1.0;
       speedValue.textContent = `${parseFloat(speedSlider.value).toFixed(1)}×`;
-      stabilitySlider.value = config.stability || 0.5;
+      stabilitySlider.value = config.stability ?? 0.5;
       stabilityValue.textContent = parseFloat(stabilitySlider.value).toFixed(2);
-      similaritySlider.value = config.similarity_boost || 0.75;
+      similaritySlider.value = config.similarity_boost ?? 0.75;
       similarityValue.textContent = parseFloat(similaritySlider.value).toFixed(2);
+      updateInputMeta();
     } catch (e) {
-      toast("Could not connect to NeuroReader server.", "error");
+      notify("Could not connect to NeuroReader server.", "error");
     }
   }
 
